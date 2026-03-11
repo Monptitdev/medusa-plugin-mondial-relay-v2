@@ -1,0 +1,253 @@
+{
+  "tarifs_mondial_relay": {
+    "version": "2025-01",
+    "devise": "EUR",
+    "type": "HT",
+    "description": "Tarifs des envois HORS DOMICILE (points relais) - € HT/colis avant remise",
+    "poids_maximum": 30,
+    "supplements_iles": {
+      "corse": 3.00,
+      "baleares": 3.00
+    },
+    "destinations": {
+      "FR": "France",
+      "FR_LOCKERS": "Spécial Lockers France",
+      "BE": "Belgique Luxembourg",
+      "NL": "Pays-Bas",
+      "DE": "Allemagne",
+      "ES": "Espagne",
+      "PT": "Portugal",
+      "PL": "Pologne",
+      "IT": "Italie",
+      "AT": "Autriche"
+    },
+    "codes_livraison": {
+      "FR": {
+        "24R": "Standard",
+        "24L": "Volumineux",
+        "SMA": "Léger"
+      }
+    },
+    "tranches_poids": [
+      {
+        "min": 0.00,
+        "max": 0.25,
+        "tarifs": {
+          "FR": 3.49,
+          "FR_LOCKERS": 2.99,
+          "BE": 3.83,
+          "NL": 4.67,
+          "DE": 5.42,
+          "ES": 5.67,
+          "PT": 5.67,
+          "PL": 5.42,
+          "IT": 5.67,
+          "AT": 7.26
+        }
+      },
+      {
+        "min": 0.25,
+        "max": 0.50,
+        "tarifs": {
+          "FR": 3.58,
+          "FR_LOCKERS": 2.99,
+          "BE": 3.83,
+          "NL": 4.67,
+          "DE": 5.98,
+          "ES": 5.67,
+          "PT": 5.67,
+          "PL": 6.00,
+          "IT": 5.67,
+          "AT": 7.82
+        }
+      },
+      {
+        "min": 0.50,
+        "max": 1.00,
+        "tarifs": {
+          "FR": 4.49,
+          "FR_LOCKERS": 2.99,
+          "BE": 4.92,
+          "NL": 5.33,
+          "DE": 6.71,
+          "ES": 6.25,
+          "PT": 6.25,
+          "PL": 6.75,
+          "IT": 6.25,
+          "AT": 8.88
+        }
+      },
+      {
+        "min": 1.00,
+        "max": 2.00,
+        "tarifs": {
+          "FR": 5.49,
+          "FR_LOCKERS": 4.49,
+          "BE": 6.83,
+          "NL": 7.25,
+          "DE": 8.20,
+          "ES": 8.25,
+          "PT": 8.25,
+          "PL": 7.58,
+          "IT": 8.25,
+          "AT": 10.46
+        }
+      },
+      {
+        "min": 2.00,
+        "max": 3.00,
+        "tarifs": {
+          "FR": 6.17,
+          "FR_LOCKERS": 4.99,
+          "BE": 6.83,
+          "NL": 7.25,
+          "DE": 10.22,
+          "ES": 8.25,
+          "PT": 8.25,
+          "PL": 8.50,
+          "IT": 8.25,
+          "AT": 12.82
+        }
+      },
+      {
+        "min": 3.00,
+        "max": 4.00,
+        "tarifs": {
+          "FR": 7.42,
+          "FR_LOCKERS": 5.83,
+          "BE": 8.08,
+          "NL": 8.92,
+          "DE": 11.53,
+          "ES": 10.33,
+          "PT": 10.33,
+          "PL": 9.50,
+          "IT": 10.33,
+          "AT": 14.08
+        }
+      },
+      {
+        "min": 4.00,
+        "max": 5.00,
+        "tarifs": {
+          "FR": 10.33,
+          "FR_LOCKERS": 7.83,
+          "BE": 10.75,
+          "NL": 10.75,
+          "DE": 12.84,
+          "ES": 12.83,
+          "PT": 12.83,
+          "PL": 10.42,
+          "IT": 12.83,
+          "AT": 15.35
+        }
+      },
+      {
+        "min": 5.00,
+        "max": 7.00,
+        "tarifs": {
+          "FR": 12.00,
+          "FR_LOCKERS": 10.17,
+          "BE": 12.00,
+          "NL": 12.42,
+          "DE": 16.34,
+          "ES": 12.83,
+          "PT": 12.83,
+          "PL": 12.25,
+          "IT": 12.83,
+          "AT": 19.47
+        }
+      },
+      {
+        "min": 7.00,
+        "max": 10.00,
+        "tarifs": {
+          "FR": 12.00,
+          "FR_LOCKERS": 11.58,
+          "BE": 12.00,
+          "NL": 12.42,
+          "DE": 18.47,
+          "ES": 12.83,
+          "PT": 12.83,
+          "PL": 15.17,
+          "IT": 12.83,
+          "AT": 20.39
+        }
+      },
+      {
+        "min": 10.00,
+        "max": 15.00,
+        "tarifs": {
+          "FR": 18.67,
+          "FR_LOCKERS": 16.58,
+          "BE": 22.00,
+          "NL": 24.50,
+          "DE": 24.62,
+          "ES": 24.50,
+          "PT": 24.50,
+          "PL": 19.92,
+          "IT": 24.50,
+          "AT": 25.78
+        }
+      },
+      {
+        "min": 15.00,
+        "max": 20.00,
+        "tarifs": {
+          "FR": 18.67,
+          "FR_LOCKERS": 17.50,
+          "BE": 22.00,
+          "NL": 24.50,
+          "DE": 29.13,
+          "ES": 24.50,
+          "PT": 24.50,
+          "PL": 24.67,
+          "IT": 24.50,
+          "AT": 35.09
+        }
+      },
+      {
+        "min": 20.00,
+        "max": 25.00,
+        "tarifs": {
+          "FR": 27.00,
+          "FR_LOCKERS": 25.83,
+          "BE": 30.33,
+          "NL": 32.83,
+          "DE": null,
+          "ES": 32.83,
+          "PT": 32.83,
+          "PL": 29.42,
+          "IT": 32.83,
+          "AT": null
+        }
+      },
+      {
+        "min": 25.00,
+        "max": 30.00,
+        "tarifs": {
+          "FR": 27.00,
+          "FR_LOCKERS": null,
+          "BE": 30.33,
+          "NL": 32.83,
+          "DE": null,
+          "ES": 32.83,
+          "PT": 32.83,
+          "PL": null,
+          "IT": null,
+          "AT": null
+        }
+      }
+    ]
+  }
+}
+
+
+
+
+
+
+
+
+
+
+
