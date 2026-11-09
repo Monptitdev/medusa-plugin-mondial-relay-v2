@@ -1,4 +1,5 @@
 import { AuthenticatedMedusaRequest, MedusaResponse } from "@medusajs/framework/http"
+import { redactSensitive } from "../../../../utils/redact-sensitive"
 import { ContainerRegistrationKeys, Modules } from "@medusajs/framework/utils"
 import { MondialRelayAPI2Service } from "../../../../services/mondial-relay-api2.service"
 
@@ -80,7 +81,7 @@ export async function GET(req: AuthenticatedMedusaRequest, res: MedusaResponse) 
                           order.metadata.shipping_metadata?.mondial_relay_label_url
           
           console.log(`🔍 Tracking number pour ${order.id}:`, trackingNumber)
-          console.log(`🔗 Label URL pour ${order.id}:`, labelUrl)
+          console.log(`🔗 Label URL pour ${order.id}:`, redactSensitive(String(labelUrl ?? "")))
           
           shipments.push({
             id: `ship_${fulfillment.id}`,

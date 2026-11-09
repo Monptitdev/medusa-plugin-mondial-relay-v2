@@ -13,7 +13,11 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     const enseigne = process.env.MONDIAL_RELAY_ENSEIGNE
     const privateKey = process.env.MONDIAL_RELAY_PRIVATE_KEY
 
-    console.log('🔧 Configuration API 1 depuis variables d\'environnement:', { apiUrl, enseigne, privateKey })
+    console.log('🔧 Configuration API 1 depuis variables d\'environnement:', {
+      apiUrl,
+      enseigne,
+      privateKey: privateKey ? '[redacted]' : 'absent',
+    })
 
     const api1Service = new MondialRelayAPI1Service(apiUrl, enseigne, privateKey)
 

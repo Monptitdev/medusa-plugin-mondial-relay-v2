@@ -1,13 +1,14 @@
+import { createHash } from "crypto"
 import { AuthenticatedMedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { MondialRelayAPI2Service } from "../../../../../services/mondial-relay-api2.service"
+import { redactSensitive } from "../../../../../utils/redact-sensitive"
 
 /**
  * Génère le CRC de sécurité pour l'URL d'étiquette
  */
 function generateCRC(shipmentId: string, customerId: string, privateKey: string): string {
-  const crypto = require('crypto')
   const data = `${customerId}${shipmentId}fr-FR10x15${privateKey}`
-  return crypto.createHash('md5').update(data).digest('hex').toUpperCase()
+  return createHash("md5").update(data).digest("hex").toUpperCase()
 }
 
 export async function GET(req: AuthenticatedMedusaRequest, res: MedusaResponse) {
@@ -48,7 +49,7 @@ export async function GET(req: AuthenticatedMedusaRequest, res: MedusaResponse) 
              const crc = generateCRC(shipmentNumber, customerId, privateKey)
              const labelUrl = `${baseLabelUrl}?ens=${customerId}&expedition=${shipmentNumber}&lg=fr-FR&format=10x15&crc=${crc}`
       
-      console.log('🔗 URL étiquette:', labelUrl)
+      console.log('🔗 URL étiquette:', redactSensitive(labelUrl))
 
       // Faire la requête vers Mondial Relay pour récupérer le PDF
       const response = await fetch(labelUrl, {
@@ -95,7 +96,7 @@ export async function GET(req: AuthenticatedMedusaRequest, res: MedusaResponse) 
       const fallbackCrc = generateCRC(shipmentNumber, fallbackCustomerId, fallbackPrivateKey)
       const fallbackLabelUrl = `${fallbackBaseLabelUrl}?ens=${fallbackCustomerId}&expedition=${shipmentNumber}&lg=fr-FR&format=10x15&crc=${fallbackCrc}`
       
-      console.log('🔗 URL étiquette fallback:', fallbackLabelUrl)
+      console.log('🔗 URL étiquette fallback:', redactSensitive(fallbackLabelUrl))
       
       try {
         const fallbackResponse = await fetch(fallbackLabelUrl, {

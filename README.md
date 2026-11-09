@@ -88,8 +88,8 @@ module.exports = defineConfig({
       storeCors: process.env.STORE_CORS!,
       adminCors: process.env.ADMIN_CORS!,
       authCors: process.env.AUTH_CORS!,
-      jwtSecret: process.env.JWT_SECRET || "supersecret",
-      cookieSecret: process.env.COOKIE_SECRET || "supersecret",
+      jwtSecret: process.env.JWT_SECRET,
+      cookieSecret: process.env.COOKIE_SECRET,
     }
   },
   modules: [
@@ -147,6 +147,13 @@ BUSINESS_CITY=Your City
 BUSINESS_PHONE=Your Phone Number
 BUSINESS_MOBILE=Your Mobile Number
 BUSINESS_EMAIL=your.email@domain.com
+
+# Medusa admin API (fulfillment provider)
+# Required when the Order module is not available from the fulfillment provider container.
+# No default values. Plugin options adminBaseUrl, adminEmail and adminPassword override these.
+ADMIN_BASE_URL=https://your-medusa-backend.example.com
+ADMIN_EMAIL=admin@example.com
+ADMIN_PASSWORD=YOUR_ADMIN_PASSWORD
 ```
 
 ### Production vs Sandbox
@@ -441,7 +448,7 @@ const createShipment = async (orderId: string, relayPointId: string) => {
 | `MONDIAL_RELAY_PRIVATE_KEY` | Your private key | `YOUR_PRIVATE_KEY` |
 | `MONDIAL_RELAY_API_BASE_URL` | API 2 REST base URL | `https://connect-api-sandbox.mondialrelay.com` |
 | `MONDIAL_RELAY_LOGIN` | API 2 login | `your-login@business-api.mondialrelay.com` |
-| `MONDIAL_RELAY_PASSWORD` | API 2 password | `your-password` |
+| `MONDIAL_RELAY_PASSWORD` | API 2 password | `YOUR_PASSWORD` |
 | `MONDIAL_RELAY_CUSTOMER_ID` | Your customer ID | `YOUR_CUSTOMER_ID` |
 
 ### Business Address Variables
@@ -459,6 +466,39 @@ const createShipment = async (orderId: string, relayPointId: string) => {
 | `BUSINESS_PHONE` | Phone number | `0123456789` |
 | `BUSINESS_MOBILE` | Mobile number | `0123456789` |
 | `BUSINESS_EMAIL` | Email address | `contact@example.com` |
+
+### Medusa admin API
+
+The fulfillment provider reads relay-point metadata from the order and writes tracking data back. It uses the internal Order module when that module is available in its container. Otherwise it calls the Medusa admin HTTP API and authenticates with `POST /auth/user/emailpass`.
+
+There is no built-in email, password, or base URL. Set either the environment variables below or the provider options `adminBaseUrl`, `adminEmail`, and `adminPassword`. Options take precedence over environment variables. If the Order module is unavailable and any value is missing, fulfillment fails with an explicit error and nothing secret is logged.
+
+Register the provider in the host `medusa-config.ts`:
+
+```typescript
+{
+  resolve: "@medusajs/medusa/fulfillment",
+  options: {
+    providers: [
+      {
+        resolve: "medusa-plugin-mondial-relay-v2/providers/mondial-relay",
+        id: "mondial-relay",
+        options: {
+          adminBaseUrl: process.env.ADMIN_BASE_URL,
+          adminEmail: process.env.ADMIN_EMAIL,
+          adminPassword: process.env.ADMIN_PASSWORD,
+        },
+      },
+    ],
+  },
+}
+```
+
+| Variable | Description | Example |
+|----------|-------------|---------|
+| `ADMIN_BASE_URL` | Medusa backend origin, without a trailing slash | `https://your-medusa-backend.example.com` |
+| `ADMIN_EMAIL` | Admin user email used for the admin API | `admin@example.com` |
+| `ADMIN_PASSWORD` | Password of that admin user | `YOUR_ADMIN_PASSWORD` |
 
 ## Development
 
@@ -614,6 +654,10 @@ MIT License - see LICENSE file for details.
 5. Submit a pull request
 
 ## Changelog
+
+### v0.0.2
+- Removed hardcoded Medusa admin credentials from the Mondial Relay fulfillment provider. Order updates use the internal Order module when it is available. Otherwise the provider reads `ADMIN_EMAIL`, `ADMIN_PASSWORD`, and `ADMIN_BASE_URL` (or the provider options `adminEmail`, `adminPassword`, and `adminBaseUrl`) and fails with a clear error when they are missing. No default URL, email, or password.
+- Stopped logging private keys, passwords, SOAP security hashes, signed request XML, tokens, and Authorization headers.
 
 ### v0.0.1
 - Initial release
