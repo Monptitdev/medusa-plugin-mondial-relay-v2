@@ -1,6 +1,6 @@
 {
   "name": "medusa-plugin-mondial-relay-v2",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "description": "Medusa.js v2 plugin for Mondial Relay: relay point search (API 1 SOAP), shipment creation & tracking (API 2 REST), fulfillment provider.",
   "author": "Monptitdev",
   "license": "MIT",

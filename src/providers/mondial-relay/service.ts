@@ -1,10 +1,10 @@
-import { AbstractFulfillmentProviderService } from "@medusajs/framework/utils"
-import { Logger } from "@medusajs/framework/types"
-import { Modules } from "@medusajs/framework/utils"
-
-// Charger les variables d'environnement
-require('dotenv').config()
+import { createHash } from "crypto"
+import * as fs from "fs"
+import * as path from "path"
+import "dotenv/config"
+import { AbstractFulfillmentProviderService, Modules } from "@medusajs/framework/utils"
 import {
+  Logger,
   FulfillmentItemDTO,
   FulfillmentOrderDTO,
   FulfillmentDTO,
@@ -19,10 +19,20 @@ import {
 import { MondialRelayAPI2Service, ShipmentResult } from "../../services/mondial-relay-api2.service"
 // Importer le service de tarifs
 import TarifsService from "../../services/tarifs.service"
+import {
+  AdminMedusaConfig,
+  resolveAdminMedusaConfig,
+} from "../../utils/admin-medusa-config"
+import { redactSensitive } from "../../utils/redact-sensitive"
+
+type OrderModuleLike = {
+  retrieveOrder: (id: string) => Promise<{ metadata?: Record<string, unknown> | null }>
+  updateOrders: (data: Array<{ id: string; metadata: Record<string, unknown> }>) => Promise<unknown>
+}
 
 type InjectedDependencies = {
   logger: Logger
-  container: any
+  [key: string]: unknown
 }
 
 type MondialRelayOptions = {
@@ -55,6 +65,9 @@ type MondialRelayOptions = {
     mobile?: string
     email?: string
   }
+  adminBaseUrl?: string
+  adminEmail?: string
+  adminPassword?: string
 }
 
 class MondialRelayFulfillmentService extends AbstractFulfillmentProviderService {
@@ -66,18 +79,19 @@ class MondialRelayFulfillmentService extends AbstractFulfillmentProviderService 
 
   protected logger_: Logger
   protected options_: MondialRelayOptions
+  protected container_: InjectedDependencies
 
   private mondialRelayAPI2Service: MondialRelayAPI2Service
 
   constructor(
-    { logger }: InjectedDependencies,
+    container: InjectedDependencies,
     options: MondialRelayOptions
   ) {
     super()
-    this.logger_ = logger
-    this.options_ = options
+    this.logger_ = container.logger as Logger
+    this.container_ = container
+    this.options_ = options ?? {}
     this.mondialRelayAPI2Service = new MondialRelayAPI2Service()
-    
   }
 
   /**
@@ -104,31 +118,152 @@ class MondialRelayFulfillmentService extends AbstractFulfillmentProviderService 
   }
 
   /**
-   * Met à jour les métadonnées de la commande via l'API HTTP admin
+   * Le conteneur d'un provider de fulfillment est celui du module, pas celui
+   * de l'application. Le module Order n'y est en général pas résolvable.
+   * On l'utilise quand il est présent ; sinon l'API admin HTTP prend le relais.
+   */
+  private resolveOrderService(): OrderModuleLike | null {
+    const container = this.container_
+    const direct = this.asOrderService(container[Modules.ORDER]) ?? this.asOrderService(container.order)
+    if (direct) {
+      return direct
+    }
+
+    const resolve = container.resolve
+    if (typeof resolve !== "function") {
+      return null
+    }
+
+    try {
+      return this.asOrderService(resolve.call(container, Modules.ORDER))
+    } catch {
+      return null
+    }
+  }
+
+  private asOrderService(value: unknown): OrderModuleLike | null {
+    if (!value || typeof value !== "object") {
+      return null
+    }
+
+    const service = value as OrderModuleLike
+    if (typeof service.retrieveOrder !== "function" || typeof service.updateOrders !== "function") {
+      return null
+    }
+
+    return service
+  }
+
+  private async requestAdminToken(config: AdminMedusaConfig): Promise<string> {
+    let response: Response
+    try {
+      response = await fetch(`${config.baseUrl}/auth/user/emailpass`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          email: config.email,
+          password: config.password,
+        }),
+      })
+    } catch {
+      throw new Error(
+        "Authentification admin Medusa impossible. Vérifiez ADMIN_BASE_URL et la connectivité du backend."
+      )
+    }
+
+    if (!response.ok) {
+      throw new Error(
+        `Échec de l'authentification admin Medusa (HTTP ${response.status}). Vérifiez ADMIN_EMAIL, ADMIN_PASSWORD et ADMIN_BASE_URL.`
+      )
+    }
+
+    let payload: { token?: unknown }
+    try {
+      payload = await response.json()
+    } catch {
+      throw new Error("L'authentification admin Medusa a renvoyé une réponse illisible.")
+    }
+
+    if (typeof payload.token !== "string" || payload.token.length === 0) {
+      throw new Error("L'authentification admin Medusa n'a pas renvoyé de jeton.")
+    }
+
+    return payload.token
+  }
+
+  private async loadOrder(orderId: string): Promise<{ id?: string; metadata?: Record<string, unknown> | null }> {
+    const orderService = this.resolveOrderService()
+    if (orderService) {
+      this.logger_.info("Lecture de la commande via le module Order")
+      return orderService.retrieveOrder(orderId)
+    }
+
+    this.logger_.info("Lecture de la commande via l'API admin Medusa")
+    const config = resolveAdminMedusaConfig(this.options_)
+    const token = await this.requestAdminToken(config)
+    const response = await fetch(
+      `${config.baseUrl}/admin/orders/${encodeURIComponent(orderId)}?fields=id,metadata`,
+      {
+        method: "GET",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+      }
+    )
+
+    if (!response.ok) {
+      throw new Error(`Erreur récupération commande (HTTP ${response.status})`)
+    }
+
+    const payload = await response.json()
+    return payload?.order ?? payload
+  }
+
+  private async saveOrderMetadata(orderId: string, metadata: Record<string, unknown>): Promise<void> {
+    const orderService = this.resolveOrderService()
+    if (orderService) {
+      await orderService.updateOrders([{ id: orderId, metadata }])
+      this.logger_.info("Métadonnées mises à jour via le module Order")
+      return
+    }
+
+    const config = resolveAdminMedusaConfig(this.options_)
+    const token = await this.requestAdminToken(config)
+    const response = await fetch(`${config.baseUrl}/admin/orders/${encodeURIComponent(orderId)}`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ metadata }),
+    })
+
+    if (!response.ok) {
+      throw new Error(`Erreur mise à jour commande (HTTP ${response.status})`)
+    }
+
+    this.logger_.info("Métadonnées mises à jour via l'API admin Medusa")
+  }
+
+  /**
+   * Met à jour les métadonnées de la commande.
+   * Préfère le module Order interne. À défaut, l'API admin exige
+   * ADMIN_EMAIL, ADMIN_PASSWORD et ADMIN_BASE_URL (ou les options du provider).
    */
   private async updateOrderMetadata(orderId: string, metadata: any): Promise<void> {
     try {
-      // D'abord, récupérer la commande pour obtenir les métadonnées existantes
-      const orderResponse = await fetch(`http://localhost:9000/admin/orders/${orderId}`, {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${await this.getAdminToken()}`
-        }
-      })
+      const order = await this.loadOrder(orderId)
+      const currentMetadata = (order.metadata ?? {}) as Record<string, any>
+      const currentShipping = (currentMetadata.shipping_metadata ?? {}) as Record<string, unknown>
 
-      if (!orderResponse.ok) {
-        throw new Error(`Erreur récupération commande: ${orderResponse.status}`)
-      }
-
-      const order = await orderResponse.json()
-      
-      // Préparer les nouvelles métadonnées
       const newMetadata = {
-        ...order.metadata,
+        ...currentMetadata,
         shipping_metadata: {
-          ...order.metadata?.shipping_metadata,
-          carrier: 'mondial-relay',
+          ...currentShipping,
+          carrier: "mondial-relay",
           mondial_relay_tracking_number: metadata.trackingNumber,
           mondial_relay_shipment_id: metadata.shipmentId,
           mondial_relay_label_url: metadata.labelUrl,
@@ -136,44 +271,25 @@ class MondialRelayFulfillmentService extends AbstractFulfillmentProviderService 
           mondial_relay_relay_point_id: metadata.relayPointInfo?.relayPointId,
           mondial_relay_relay_point_name: metadata.relayPointInfo?.relayPointName,
           mondial_relay_relay_point_address: metadata.relayPointInfo?.relayPointAddress,
-          mondial_relay_weight: metadata.relayPointInfo?.weight
+          mondial_relay_weight: metadata.relayPointInfo?.weight,
         },
         mondial_relay_shipment: {
           id: metadata.shipmentId,
           orderId: order.id,
           trackingNumber: metadata.trackingNumber,
-          status: 'created',
+          status: "created",
           relayPointId: metadata.relayPointInfo?.relayPointId,
           weight: metadata.relayPointInfo?.weight,
           shipmentId: metadata.shipmentId,
           labelUrl: metadata.labelUrl,
-          createdAt: new Date().toISOString()
-        }
-      }
-      
-      // Mettre à jour les métadonnées
-      const updateResponse = await fetch(`http://localhost:9000/admin/orders/${orderId}`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${await this.getAdminToken()}`
+          createdAt: new Date().toISOString(),
         },
-        body: JSON.stringify({
-          metadata: newMetadata
-        })
-      })
-
-      this.logger_.info(`📊 Status mise à jour: ${updateResponse.status}`)
-      if (!updateResponse.ok) {
-        const errorText = await updateResponse.text()
-        this.logger_.error(`❌ Erreur mise à jour: ${errorText}`)
-        throw new Error(`Erreur mise à jour commande: ${updateResponse.status} - ${errorText}`)
       }
 
-      this.logger_.info('✅ Métadonnées mises à jour via API HTTP admin')
+      await this.saveOrderMetadata(orderId, newMetadata)
     } catch (error) {
-      this.logger_.error('❌ Erreur mise à jour métadonnées via API HTTP:', error)
-      this.logger_.error(`❌ Stack trace: ${error.stack}`)
+      const message = error instanceof Error ? error.message : "erreur inconnue"
+      this.logger_.error(`Erreur mise à jour métadonnées: ${message}`)
       throw error
     }
   }
@@ -186,10 +302,10 @@ class MondialRelayFulfillmentService extends AbstractFulfillmentProviderService 
     const customerId = process.env.MONDIAL_RELAY_ENSEIGNE
     const privateKey = process.env.MONDIAL_RELAY_PRIVATE_KEY
     
-    console.log('🔧 Variables d\'environnement pour URL étiquette:', {
+    console.log("Variables d'environnement pour URL étiquette:", {
       baseLabelUrl,
       customerId,
-      privateKey: privateKey ? '***' : 'undefined'
+      privateKey: privateKey ? "[redacted]" : "absent",
     })
     
     if (!baseLabelUrl || !customerId || !privateKey) {
@@ -199,7 +315,7 @@ class MondialRelayFulfillmentService extends AbstractFulfillmentProviderService 
     const crc = this.generateCRC(shipmentId, customerId, privateKey)
     const finalUrl = `${baseLabelUrl}?ens=${customerId}&expedition=${shipmentId}&lg=fr-FR&format=10x15&crc=${crc}`
     
-    console.log('🔗 URL étiquette générée:', finalUrl)
+    console.log("URL étiquette générée:", redactSensitive(finalUrl))
     
     return finalUrl
   }
@@ -225,40 +341,8 @@ class MondialRelayFulfillmentService extends AbstractFulfillmentProviderService 
    * Génère le CRC de sécurité pour l'URL d'étiquette
    */
   private generateCRC(shipmentId: string, customerId: string, privateKey: string): string {
-    const crypto = require('crypto')
     const data = `${customerId}${shipmentId}fr-FR10x15${privateKey}`
-    return crypto.createHash('md5').update(data).digest('hex').toUpperCase()
-  }
-
-  /**
-   * Obtient un token d'authentification admin
-   */
-  private async getAdminToken(): Promise<string> {
-    try {
-      // Login admin direct
-      const loginResponse = await fetch('http://localhost:9000/auth/user/emailpass', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          email: 'quentin@monptitdev.fr',
-          password: 'Qucu14092018'
-        })
-      })
-
-      if (!loginResponse.ok) {
-        throw new Error(`Erreur login admin: ${loginResponse.status}`)
-      }
-
-      const loginData = await loginResponse.json()
-      
-      // Utiliser directement le token retourné
-      return loginData.token || 'dummy-token'
-    } catch (error) {
-      this.logger_.error('❌ Erreur authentification admin:', error)
-      return 'dummy-token'
-    }
+    return createHash("md5").update(data).digest("hex").toUpperCase()
   }
 
   /**
@@ -291,104 +375,17 @@ class MondialRelayFulfillmentService extends AbstractFulfillmentProviderService 
         throw new Error("Adresse de livraison requise")
       }
 
-      // Récupérer les métadonnées du point relais depuis l'ordre
-      // Les métadonnées Mondial Relay sont dans les métadonnées de la commande
-      // Mais elles peuvent aussi être dans les métadonnées du shipping method
-      // Récupérer les métadonnées depuis l'API Admin HTTP
-      
-      const http = require('http');
-      
-      // 1. S'authentifier d'abord pour obtenir le token JWT
-      console.log(`🔑 DEBUG: Authentification admin...`)
-      this.logger_.info(`🔑 Authentification admin...`)
-      
-      const authResponse = await new Promise<{status: number, data: any}>((resolve, reject) => {
-        const authOptions = {
-          hostname: 'localhost',
-          port: 9000,
-          path: '/auth/user/emailpass',
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json'
-          }
-        };
-        
-        const authReq = http.request(authOptions, (res) => {
-          let body = '';
-          res.on('data', (chunk) => body += chunk);
-          res.on('end', () => {
-            try {
-              const result = JSON.parse(body);
-              resolve({ status: res.statusCode, data: result });
-            } catch (e) {
-              resolve({ status: res.statusCode, data: body });
-            }
-          });
-        });
-        
-        authReq.on('error', (e) => {
-          reject(e);
-        });
-        
-        authReq.write(JSON.stringify({
-          email: 'quentin@monptitdev.fr',
-          password: 'Qucu14092018'
-        }));
-        
-        authReq.end();
-      });
-      
-      console.log(`🔑 DEBUG: Statut d'authentification: ${authResponse.status}`)
-      console.log(`🔑 DEBUG: Données d'authentification: ${JSON.stringify(authResponse.data, null, 2)}`)
-      
-      if (authResponse.status !== 200) {
-        throw new Error(`Erreur authentification: ${authResponse.status} ${JSON.stringify(authResponse.data)}`);
+      // Les métadonnées Mondial Relay sont sur la commande.
+      // Si Medusa ne les transmet pas au provider, on les relit via le module Order
+      // ou, à défaut, via l'API admin (identifiants issus des options ou de l'environnement).
+      let orderMetadata = (order as { metadata?: Record<string, any> | null }).metadata ?? undefined
+      if (!orderMetadata?.carrier) {
+        if (!order.id) {
+          throw new Error("Identifiant de commande manquant pour lire les métadonnées Mondial Relay")
+        }
+        const loadedOrder = await this.loadOrder(order.id)
+        orderMetadata = (loadedOrder.metadata ?? undefined) as Record<string, any> | undefined
       }
-      
-      console.log(`🔑 DEBUG: Réponse d'authentification complète: ${JSON.stringify(authResponse.data, null, 2)}`)
-      const jwtToken = authResponse.data.token;
-      console.log(`✅ DEBUG: Token JWT obtenu: ${jwtToken.substring(0, 20)}...`)
-      this.logger_.info(`✅ Token JWT obtenu: ${jwtToken.substring(0, 20)}...`)
-      
-      // 2. Récupérer les métadonnées de la commande avec le token
-      const orderResponse = await new Promise<{status: number, data: any}>((resolve, reject) => {
-        const options = {
-          hostname: 'localhost',
-          port: 9000,
-          path: `/admin/orders/${order.id}?fields=id,metadata`,
-          method: 'GET',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${jwtToken}`
-          }
-        };
-        
-        const req = http.request(options, (res) => {
-          let body = '';
-          res.on('data', (chunk) => body += chunk);
-          res.on('end', () => {
-            try {
-              const result = JSON.parse(body);
-              resolve({ status: res.statusCode, data: result });
-            } catch (e) {
-              resolve({ status: res.statusCode, data: body });
-            }
-          });
-        });
-        
-        req.on('error', (e) => {
-          reject(e);
-        });
-        
-        req.end();
-      });
-      
-      if (orderResponse.status !== 200) {
-        throw new Error(`Erreur récupération commande: ${orderResponse.status} ${JSON.stringify(orderResponse.data)}`);
-      }
-      
-      console.log(`📦 DEBUG: Structure complète de orderResponse.data: ${JSON.stringify(orderResponse.data, null, 2)}`)
-      const orderMetadata = orderResponse.data.order.metadata
       
       console.log(`📦 DEBUG: Métadonnées complètes de la commande: ${JSON.stringify(orderMetadata, null, 2)}`)
       this.logger_.info(`📦 Métadonnées complètes de la commande: ${JSON.stringify(orderMetadata, null, 2)}`)
@@ -406,9 +403,6 @@ class MondialRelayFulfillmentService extends AbstractFulfillmentProviderService 
       if (!orderMetadata) {
         console.log("❌ CRITIQUE: orderMetadata est undefined après récupération depuis l'API !")
         
-        // Sauvegarder les logs dans un fichier
-        const fs = require('fs');
-        const path = require('path');
         const logDir = path.join(process.cwd(), 'logs', 'debug');
         if (!fs.existsSync(logDir)) {
           fs.mkdirSync(logDir, { recursive: true });
@@ -589,10 +583,10 @@ class MondialRelayFulfillmentService extends AbstractFulfillmentProviderService 
       console.log("🚀 DEBUG: Appel API 2 avec données:", JSON.stringify(shipmentData, null, 2))
       
       const shipmentResult = await this.createShipmentViaAPI2(shipmentData)
-      console.log("🚀 DEBUG: Résultat API 2 reçu:", JSON.stringify(shipmentResult, null, 2))
+      console.log("🚀 DEBUG: Résultat API 2 reçu:", redactSensitive(JSON.stringify(shipmentResult, null, 2)))
       
       this.logger_.info("✅ API 2 Mondial Relay appelée avec succès")
-      this.logger_.info(`📦 Résultat API 2: ${JSON.stringify(shipmentResult, null, 2)}`)
+      this.logger_.info(`📦 Résultat API 2: ${redactSensitive(JSON.stringify(shipmentResult, null, 2))}`)
 
       this.logger_.info("✅ Expédition Mondial Relay créée")
 
@@ -609,7 +603,7 @@ class MondialRelayFulfillmentService extends AbstractFulfillmentProviderService 
         const finalRelayPointAddress = finalRelayPointInfo.agencyCode ? 
           `Agence ${finalRelayPointInfo.agencyCode}` : relayPointAddress
         
-        this.logger_.info(`📋 Données à mettre à jour: ${JSON.stringify({
+        this.logger_.info(`📋 Données à mettre à jour: ${redactSensitive(JSON.stringify({
           trackingNumber: shipmentResult.trackingNumber,
           shipmentId: shipmentResult.shipmentId,
           labelUrl: shipmentResult.labelUrl,
@@ -620,7 +614,7 @@ class MondialRelayFulfillmentService extends AbstractFulfillmentProviderService 
             relayPointAddress: finalRelayPointAddress,
             weight: totalWeight
           }
-        }, null, 2)}`)
+        }, null, 2))}`)
         
         await this.updateOrderMetadata(order.id || '', {
           trackingNumber: shipmentResult.trackingNumber,
@@ -659,16 +653,19 @@ class MondialRelayFulfillmentService extends AbstractFulfillmentProviderService 
       }
       
       this.logger_.info("📤 Retour du service Mondial Relay")
-      this.logger_.info(`📦 Résultat final: ${JSON.stringify(result, null, 2)}`)
+      this.logger_.info(`📦 Résultat final: ${redactSensitive(JSON.stringify(result, null, 2))}`)
       
       return result
     } catch (error) {
-      this.logger_.error("❌ Erreur création expédition Mondial Relay", error)
-      this.logger_.error(`❌ Détails de l'erreur: ${error.message}`)
-      this.logger_.error(`❌ Stack trace: ${error.stack}`)
+      const message = error instanceof Error ? error.message : "erreur inconnue"
+      const stack = error instanceof Error ? error.stack : undefined
+      this.logger_.error(`❌ Erreur création expédition Mondial Relay: ${redactSensitive(message)}`)
+      if (stack) {
+        this.logger_.error(`❌ Stack trace: ${redactSensitive(stack)}`)
+      }
       
       // Re-throw l'erreur avec plus de contexte
-      throw new Error(`Mondial Relay fulfillment error: ${error.message}`)
+      throw new Error(`Mondial Relay fulfillment error: ${redactSensitive(message)}`)
     }
   }
 

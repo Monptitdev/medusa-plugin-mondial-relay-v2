@@ -1,8 +1,7 @@
 import { createHash } from 'crypto'
+import "dotenv/config"
 import { MondialRelayAPI1Service } from "./mondial-relay-api1.service"
-
-// Charger les variables d'environnement
-require('dotenv').config()
+import { redactSensitive } from "../utils/redact-sensitive"
 
 export interface ShipmentData {
   orderNumber: string
@@ -85,7 +84,7 @@ export class MondialRelayAPI2Service {
       
       // Construire le XML pour l'API 2
       const xmlRequest = this.buildShipmentXML(shipmentData)
-      console.log('📄 XML généré (500 premiers caractères):', xmlRequest.substring(0, 500))
+      console.log('📄 XML généré (500 premiers caractères):', redactSensitive(xmlRequest).substring(0, 500))
       console.log('📄 Taille XML:', xmlRequest.length, 'caractères')
       
       // Sauvegarder le XML dans un fichier pour debug (désactivé pour éviter le hot reload)
@@ -97,7 +96,7 @@ export class MondialRelayAPI2Service {
       
       console.log('📡 Appel API 2 Mondial Relay RÉEL...')
       console.log('🔗 URL:', `${this.baseUrl}/api/shipment`)
-      console.log('🔑 Auth:', `Basic ${Buffer.from(`${this.login}:${this.password}`).toString('base64')}`)
+      console.log('🔑 Auth: Basic [redacted]')
       console.log('📋 Headers envoyés:', {
         'Accept': 'application/xml',
         'Content-Type': 'text/xml'
@@ -144,8 +143,8 @@ export class MondialRelayAPI2Service {
       const responseText = await response.text()
 
       if (!response.ok) {
-        console.error('❌ Erreur HTTP API 2:', responseText)
-        throw new Error(`HTTP Error: ${response.status} ${response.statusText} - ${responseText}`)
+        console.error('❌ Erreur HTTP API 2:', redactSensitive(responseText))
+        throw new Error(`HTTP Error: ${response.status} ${response.statusText}`)
       }
 
       console.log('📡 Traitement de la réponse...')
@@ -309,7 +308,7 @@ export class MondialRelayAPI2Service {
         
         if (!shipmentNumber) {
           console.log('❌ ERREUR: Aucun numéro d\'expédition trouvé dans la réponse XML')
-          console.log('🔍 Réponse XML complète:', response)
+          console.log('🔍 Réponse XML complète:', redactSensitive(response))
           throw new Error('Impossible de récupérer le numéro d\'expédition depuis l\'API Mondial Relay')
         }
         
@@ -325,16 +324,16 @@ export class MondialRelayAPI2Service {
       // Parser comme JSON selon structure XSD (fallback pour format JSON)
       if (response.startsWith('{')) {
         const jsonResponse = JSON.parse(response)
-        console.log('📦 Réponse JSON parsée selon XSD:', JSON.stringify(jsonResponse, null, 2))
+        console.log('📦 Réponse JSON parsée selon XSD:', redactSensitive(JSON.stringify(jsonResponse, null, 2)))
         
         // Extraire les données selon structure XSD officielle
         const shipmentsList = jsonResponse.ShipmentsList?.Shipment || []
         console.log('🔍 ShipmentsList trouvé selon XSD:', shipmentsList.length, 'expéditions')
-        console.log('🔍 Structure complète ShipmentsList:', JSON.stringify(shipmentsList, null, 2))
+        console.log('🔍 Structure complète ShipmentsList:', redactSensitive(JSON.stringify(shipmentsList, null, 2)))
         
         if (shipmentsList.length === 0) {
           console.log('❌ Aucune expédition dans ShipmentsList selon XSD')
-          console.log('🔍 Structure complète de la réponse:', JSON.stringify(jsonResponse, null, 2))
+          console.log('🔍 Structure complète de la réponse:', redactSensitive(JSON.stringify(jsonResponse, null, 2)))
           throw new Error('Aucune expédition trouvée dans la réponse')
         }
         
@@ -387,21 +386,21 @@ export class MondialRelayAPI2Service {
         
         if (!shipmentNumber) {
           console.log('❌ ERREUR: Aucun numéro d\'expédition trouvé dans la réponse JSON')
-          console.log('🔍 Réponse JSON complète:', jsonResponse)
+          console.log('🔍 Réponse JSON complète:', redactSensitive(JSON.stringify(jsonResponse)))
           throw new Error('Impossible de récupérer le numéro d\'expédition depuis l\'API Mondial Relay')
         }
         
-        console.log('✅ Parsing JSON API 2 selon XSD réussi:', result)
+        console.log('✅ Parsing JSON API 2 selon XSD réussi:', redactSensitive(JSON.stringify(result)))
         return result
       } else {
         // Format non reconnu
         console.log('❌ Format de réponse non reconnu')
-        console.log('🔍 Réponse complète:', response)
+        console.log('🔍 Réponse complète:', redactSensitive(response))
         throw new Error('Format de réponse non supporté par l\'API Mondial Relay')
       }
     } catch (parseError) {
       console.error('❌ Erreur lors du parsing de la réponse:', parseError)
-      console.log('🔍 Réponse brute:', response.substring(0, 500) + '...')
+      console.log('🔍 Réponse brute:', redactSensitive(response).substring(0, 500) + '...')
       throw new Error(`Erreur parsing réponse API: ${parseError.message}`)
     }
   }
@@ -418,7 +417,7 @@ export class MondialRelayAPI2Service {
     console.log('🔧 Variables d\'environnement pour URL étiquette:', {
       baseLabelUrl,
       customerId,
-      privateKey: privateKey ? '***' : 'undefined'
+      privateKey: privateKey ? '[redacted]' : 'absent'
     })
     
     if (!baseLabelUrl || !customerId || !privateKey) {
@@ -428,7 +427,7 @@ export class MondialRelayAPI2Service {
     const crc = this.generateCRC(shipmentId, customerId, privateKey)
     const finalUrl = `${baseLabelUrl}?ens=${customerId}&expedition=${shipmentId}&lg=fr-FR&format=10x15&crc=${crc}`
     
-    console.log('🔗 URL étiquette générée:', finalUrl)
+    console.log('🔗 URL étiquette générée:', redactSensitive(finalUrl))
     
     return finalUrl
   }
@@ -437,9 +436,8 @@ export class MondialRelayAPI2Service {
    * Génère le CRC de sécurité pour l'URL d'étiquette
    */
   private generateCRC(shipmentId: string, customerId: string, privateKey: string): string {
-    const crypto = require('crypto')
     const data = `${customerId}${shipmentId}fr-FR10x15${privateKey}`
-    return crypto.createHash('md5').update(data).digest('hex').toUpperCase()
+    return createHash('md5').update(data).digest('hex').toUpperCase()
   }
 
   async trackShipment(trackingNumber: string): Promise<any> {

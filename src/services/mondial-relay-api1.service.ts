@@ -1,6 +1,7 @@
 import crypto from 'crypto'
 import * as fs from 'fs'
 import * as path from 'path'
+import { redactSensitive } from "../utils/redact-sensitive"
 
 export interface SearchRelayPointsParams {
   zipCode?: string
@@ -173,7 +174,7 @@ export class MondialRelayAPI1Service {
     
     const securityHash = crypto.createHash('md5').update(securityString).digest('hex').toUpperCase()
 
-    console.log('🔐 Clé de sécurité calculée:', securityHash)
+    console.log('🔐 Clé de sécurité calculée: [redacted]')
 
     // Appel SOAP direct avec fetch
     const soapXml = `<?xml version="1.0" encoding="utf-8"?>
@@ -224,8 +225,8 @@ export class MondialRelayAPI1Service {
 
       const xmlResponse = await response.text()
       console.log('✅ Réponse SOAP reçue')
-      console.log('📄 Contenu XML brut:', xmlResponse.substring(0, 500) + '...')
-      console.log('📄 Contenu XML complet:', xmlResponse)
+      console.log('📄 Contenu XML brut:', redactSensitive(xmlResponse).substring(0, 500) + '...')
+      console.log('📄 Contenu XML complet:', redactSensitive(xmlResponse))
       
       // Sauvegarde XML désactivée pour éviter les crashes
 
@@ -583,7 +584,7 @@ export class MondialRelayAPI1Service {
       // Construction de la requête SOAP pour le tracking
       const soapBody = this.buildTrackingSOAP(trackingNumber)
       
-      console.log('🔍 Requête SOAP tracking:', soapBody)
+      console.log('🔍 Requête SOAP tracking:', redactSensitive(soapBody))
 
       const response = await fetch(this.apiUrl, {
         method: 'POST',
@@ -599,7 +600,7 @@ export class MondialRelayAPI1Service {
       }
 
       const xmlResponse = await response.text()
-      console.log('📋 Réponse SOAP tracking:', xmlResponse)
+      console.log('📋 Réponse SOAP tracking:', redactSensitive(xmlResponse))
 
       // Parse de la réponse XML
       const trackingData = this.parseTrackingResponse(xmlResponse)
@@ -630,8 +631,7 @@ export class MondialRelayAPI1Service {
     const securityString = this.enseigne + trackingNumber + 'FR' + this.privateKey
     const securityHash = crypto.createHash('md5').update(securityString).digest('hex').toUpperCase()
     
-    console.log('🔐 Clé de sécurité tracking calculée:', securityHash)
-    console.log('🔐 String pour MD5:', securityString)
+    console.log('🔐 Clé de sécurité tracking calculée: [redacted]')
 
     return `<?xml version="1.0" encoding="utf-8"?>
 <soap:Envelope xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
