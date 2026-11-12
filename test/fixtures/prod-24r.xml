@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ShipmentCreationResponse xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns="http://www.example.org/Response">
+  <ShipmentsList>
+    <Shipment ShipmentNumber="96408887">
+      <LabelList>
+        <Label>
+          <RawContent>
+            <Parcel />
+            <LabelValues Key="MR.Expedition.NumeroExpedition" Value="96408887" />
+            <LabelValues Key="MR.Expedition.CodeBarres" Value="11964088870101706623669740" />
+            <LabelValues Key="MR.PlanTri.Mode" Value="24R" />
+            <LabelValues Key="MR.PlanTri.CodeAgence" Value="662" />
+            <LabelValues Key="MR.PlanTri.Tournee" Value="66974" />
+            <LabelValues Key="MR.PlanTri.LibelleAgence" Value="HEM" />
+            <LabelValues Key="ModeSandbox" Value="False" />
+            <Barcodes>
+              <Barcode Type="Code128" DisplayedValue="11964088870301006623669740" Value="11964088870301006623669740" CarrierCode="MR" />
+            </Barcodes>
+          </RawContent>
+          <Output>http://connect.mondialrelay.com//BDTEST/etiquette/GetStickersExpeditionsAnonyme?ens=BDTEST&amp;expedition=96408887&amp;lg=fr-FR&amp;format=10x15&amp;crc=FAKE</Output>
+        </Label>
+      </LabelList>
+    </Shipment>
+  </ShipmentsList>
+  <StatusList />
+</ShipmentCreationResponse>

@@ -580,6 +580,16 @@ export class MondialRelayAPI1Service {
   async trackShipment(trackingNumber: string): Promise<TrackingResult> {
     console.log('📦 Suivi expédition Mondial Relay API 1:', trackingNumber)
 
+    // Seul le numéro d'expédition est suivi : ni le code-barres ni « SANDBOX MODE »
+    if (!/^\d{8}(\d{2}|\d{4})?$/.test(trackingNumber ?? '')) {
+      return {
+        success: false,
+        tracking_events: [],
+        status: 'error',
+        error: `Numéro d'expédition Mondial Relay invalide pour le suivi : ${trackingNumber || '(vide)'}`
+      }
+    }
+
     try {
       // Construction de la requête SOAP pour le tracking
       const soapBody = this.buildTrackingSOAP(trackingNumber)
