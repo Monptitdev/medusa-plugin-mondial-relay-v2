@@ -129,7 +129,7 @@ export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse)
     const password = process.env.MONDIAL_RELAY_PASSWORD
     const customerId = process.env.MONDIAL_RELAY_CUSTOMER_ID
 
-    console.log('🔧 Configuration API 2 depuis variables d\'environnement:', { baseUrl, login, customerId })
+    console.log('🔧 Configuration API 2 depuis variables d\'environnement:', { baseUrl, login: login ? '[redacted]' : 'absent', customerId: customerId ? '[redacted]' : 'absent' })
 
     const api2Service = new MondialRelayAPI2Service(baseUrl, login, password, customerId)
 
@@ -180,7 +180,9 @@ export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse)
       relayPointId,
       weight,
       shipmentId: shipmentResult.shipmentId,
-      labelUrl: shipmentResult.labelUrl
+      labelUrl: shipmentResult.labelUrl,
+      sandbox: shipmentResult.sandbox,
+      barcode: shipmentResult.barcode
     }
 
     // Stocker l'expédition dans les métadonnées de la commande
@@ -197,7 +199,9 @@ export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse)
             ...order.metadata.shipping_metadata,
             mondial_relay_tracking_number: shipmentResult.trackingNumber,
             mondial_relay_shipment_id: shipmentResult.shipmentId,
-            mondial_relay_label_url: shipmentResult.labelUrl
+            mondial_relay_label_url: shipmentResult.labelUrl,
+            mondial_relay_sandbox: shipmentResult.sandbox,
+            mondial_relay_barcode: shipmentResult.barcode
           },
           mondial_relay_shipment: newShipment
         }

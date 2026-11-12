@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ShipmentCreationResponse xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns="http://www.example.org/Response">
+  <ShipmentsList>
+    <Shipment ShipmentNumber="00581135">
+      <LabelList>
+        <Label>
+          <RawContent>
+            <Parcel />
+            <LabelValues Key="MR.Expedition.NumeroExpedition" Value="SANDBOX MODE" />
+            <LabelValues Key="MR.PlanTri.Mode" Value="HOM" />
+            <LabelValues Key="ModeSandbox" Value="True" />
+            <Barcodes>
+              <Barcode Type="Code128" DisplayedValue="SANDBOX MODE" Value="SANDBOX MODE" CarrierCode="MR" />
+            </Barcodes>
+          </RawContent>
+          <Output>https://connect-sandbox.mondialrelay.com//TTMRSDBX/etiquette/GetStickersExpeditionsAnonyme2?ens=TTMRSDBX&amp;expedition=00581135&amp;lg=fr-FR&amp;format=10x15&amp;crc=FAKE</Output>
+        </Label>
+      </LabelList>
+    </Shipment>
+  </ShipmentsList>
+  <StatusList>
+    <Status Code="0" Message="API Mondial Relay Sandbox, aucune donnée n'a été enregistrée, le résultat ne peut être utilisé sur un flux de production." />
+  </StatusList>
+</ShipmentCreationResponse>

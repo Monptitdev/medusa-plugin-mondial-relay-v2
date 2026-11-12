@@ -1,0 +1,1 @@
+<ShipmentCreationResponse xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns="http://www.example.org/Response"><StatusList><Status Code="10001" Level="Critical error" Message="Login et/ou mot de passe non valide. Vérifiez les informations d'authentification." /></StatusList></ShipmentCreationResponse>

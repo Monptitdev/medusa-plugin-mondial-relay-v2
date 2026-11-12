@@ -1,6 +1,3 @@
-import { createHash } from "crypto"
-import * as fs from "fs"
-import * as path from "path"
 import "dotenv/config"
 import { AbstractFulfillmentProviderService, Modules } from "@medusajs/framework/utils"
 import {
@@ -16,7 +13,7 @@ import {
 } from "@medusajs/framework/types"
 
 // Importer le service API 2
-import { MondialRelayAPI2Service, ShipmentResult } from "../../services/mondial-relay-api2.service"
+import { MondialRelayAPI2Service, requiresRelayPoint } from "../../services/mondial-relay-api2.service"
 // Importer le service de tarifs
 import TarifsService from "../../services/tarifs.service"
 import {
@@ -267,6 +264,8 @@ class MondialRelayFulfillmentService extends AbstractFulfillmentProviderService 
           mondial_relay_tracking_number: metadata.trackingNumber,
           mondial_relay_shipment_id: metadata.shipmentId,
           mondial_relay_label_url: metadata.labelUrl,
+          mondial_relay_sandbox: metadata.sandbox,
+          mondial_relay_barcode: metadata.barcode,
           mondial_relay_delivery_mode: metadata.relayPointInfo?.deliveryMode,
           mondial_relay_relay_point_id: metadata.relayPointInfo?.relayPointId,
           mondial_relay_relay_point_name: metadata.relayPointInfo?.relayPointName,
@@ -282,6 +281,8 @@ class MondialRelayFulfillmentService extends AbstractFulfillmentProviderService 
           weight: metadata.relayPointInfo?.weight,
           shipmentId: metadata.shipmentId,
           labelUrl: metadata.labelUrl,
+          sandbox: metadata.sandbox,
+          barcode: metadata.barcode,
           createdAt: new Date().toISOString(),
         },
       }
@@ -292,32 +293,6 @@ class MondialRelayFulfillmentService extends AbstractFulfillmentProviderService 
       this.logger_.error(`Erreur mise à jour métadonnées: ${message}`)
       throw error
     }
-  }
-
-  /**
-   * Génère l'URL d'étiquette avec les vraies variables d'environnement
-   */
-  private generateLabelUrl(shipmentId: string): string {
-    const baseLabelUrl = process.env.MONDIAL_RELAY_SANDBOX_LABEL_URL
-    const customerId = process.env.MONDIAL_RELAY_ENSEIGNE
-    const privateKey = process.env.MONDIAL_RELAY_PRIVATE_KEY
-    
-    console.log("Variables d'environnement pour URL étiquette:", {
-      baseLabelUrl,
-      customerId,
-      privateKey: privateKey ? "[redacted]" : "absent",
-    })
-    
-    if (!baseLabelUrl || !customerId || !privateKey) {
-      throw new Error('Variables d\'environnement manquantes pour génération URL étiquette')
-    }
-    
-    const crc = this.generateCRC(shipmentId, customerId, privateKey)
-    const finalUrl = `${baseLabelUrl}?ens=${customerId}&expedition=${shipmentId}&lg=fr-FR&format=10x15&crc=${crc}`
-    
-    console.log("URL étiquette générée:", redactSensitive(finalUrl))
-    
-    return finalUrl
   }
 
   /**
@@ -335,14 +310,6 @@ class MondialRelayFulfillmentService extends AbstractFulfillmentProviderService 
     
     // Tronquer à 30 caractères maximum pour Mondial Relay
     return cleanedAddress.length > 30 ? cleanedAddress.substring(0, 30) : cleanedAddress
-  }
-
-  /**
-   * Génère le CRC de sécurité pour l'URL d'étiquette
-   */
-  private generateCRC(shipmentId: string, customerId: string, privateKey: string): string {
-    const data = `${customerId}${shipmentId}fr-FR10x15${privateKey}`
-    return createHash("md5").update(data).digest("hex").toUpperCase()
   }
 
   /**
@@ -399,37 +366,10 @@ class MondialRelayFulfillmentService extends AbstractFulfillmentProviderService 
       
       this.logger_.info(`📦 Métadonnées complètes de la commande: ${JSON.stringify(orderMetadata, null, 2)}`)
       
-      // DEBUG: Vérifier si orderMetadata est undefined
-      if (!orderMetadata) {
-        console.log("❌ CRITIQUE: orderMetadata est undefined après récupération depuis l'API !")
-        
-        const logDir = path.join(process.cwd(), 'logs', 'debug');
-        if (!fs.existsSync(logDir)) {
-          fs.mkdirSync(logDir, { recursive: true });
-        }
-        
-        const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-        const logFile = path.join(logDir, `debug-order-metadata-${timestamp}.json`);
-        
-        const debugData = {
-          timestamp: new Date().toISOString(),
-          orderId: order.id,
-          orderMetadata: orderMetadata,
-          data: data,
-          items: items
-        };
-        
-        fs.writeFileSync(logFile, JSON.stringify(debugData, null, 2));
-        console.log(`📁 Logs sauvegardés dans: ${logFile}`);
-        
-        this.logger_.error("❌ CRITIQUE: orderMetadata est undefined après récupération depuis l'API !")
-        throw new Error("❌ CRITIQUE: Métadonnées de la commande manquantes dans l'API")
-      }
-
       // Les informations du point relais seront récupérées depuis la réponse de l'API 2
       // Pour l'instant, utiliser les métadonnées de la commande comme fallback
       const relayPointId = orderMetadata?.relayPointId || data.relayPointId
-      const deliveryMode = orderMetadata?.deliveryMode
+      const deliveryMode = String(orderMetadata?.deliveryMode || "24R").toUpperCase()
       const relayPointName = orderMetadata?.relayPointName
       const relayPointAddress = orderMetadata?.relayPointAddress
 
@@ -515,19 +455,20 @@ class MondialRelayFulfillmentService extends AbstractFulfillmentProviderService 
       
       this.logger_.info(`📏 Dimensions calculées: L=${totalLength}cm, W=${totalWidth}cm, H=${totalHeight}cm (développé: ${developedLength}cm)`)
 
-      // Créer l'expédition via l'API 2 Mondial Relay
-      // Formater le code du point relais avec le préfixe FR- pour l'API 2
-      if (!relayPointId) {
-        throw new Error(`❌ CRITIQUE: ID du point relais manquant dans les métadonnées de la commande`)
+      const recipientCountry = String(deliveryAddress.country_code || "FR").toUpperCase()
+      let location = ""
+      if (requiresRelayPoint(deliveryMode)) {
+        if (!relayPointId) {
+          throw new Error(`Point relais manquant dans les métadonnées de la commande (mode ${deliveryMode})`)
+        }
+        location = this.formatRelayPointLocation(String(relayPointId), recipientCountry)
       }
-      
-      const formattedRelayPointId = relayPointId.startsWith('FR-') ? relayPointId : `FR-${relayPointId}`
-      
+
       const shipmentData = {
         orderNumber: order.display_id || `ORDER_${Date.now()}`,
         customerNumber: order.customer_id || "CUSTOMER_001",
         deliveryMode: deliveryMode,
-        location: formattedRelayPointId,
+        location,
         weight: totalWeight,
         content: "Jouets et articles pour enfants",
         deliveryInstruction: data.deliveryInstruction || "",
@@ -542,11 +483,11 @@ class MondialRelayFulfillmentService extends AbstractFulfillmentProviderService 
           lastname: deliveryAddress.last_name || "",
           streetname: this.extractStreetName(deliveryAddress.address_1 || ""),
           houseNo: deliveryAddress.address_2 || "",
-          countryCode: deliveryAddress.country_code || "FR",
+          countryCode: recipientCountry,
           postCode: deliveryAddress.postal_code || "",
           city: deliveryAddress.city || "",
           phoneNo: deliveryAddress.phone || "",
-          email: ""
+          email: (order as { email?: string }).email || deliveryAddress.email || ""
         },
         sender: {
           title: this.options_.business?.title || process.env.BUSINESS_TITLE,
@@ -620,6 +561,8 @@ class MondialRelayFulfillmentService extends AbstractFulfillmentProviderService 
           trackingNumber: shipmentResult.trackingNumber,
           shipmentId: shipmentResult.shipmentId,
           labelUrl: shipmentResult.labelUrl,
+          sandbox: shipmentResult.sandbox,
+          barcode: shipmentResult.barcode,
           relayPointInfo: {
             deliveryMode: finalDeliveryMode,
             relayPointId: finalRelayPointId,
@@ -640,16 +583,24 @@ class MondialRelayFulfillmentService extends AbstractFulfillmentProviderService 
       }
 
       // Préparer le résultat de retour
-      const result = {
+      const result: CreateFulfillmentResult = {
         data: {
           shipmentId: shipmentResult.shipmentId,
           trackingNumber: shipmentResult.trackingNumber,
+          barcode: shipmentResult.barcode,
+          sandbox: shipmentResult.sandbox,
           labelUrl: shipmentResult.labelUrl,
-          relayPointId: data.relayPointId,
+          relayPointId: relayPointId,
           deliveryMode: shipmentData.deliveryMode,
           weight: totalWeight
         },
-        labels: []
+        labels: [
+          {
+            tracking_number: shipmentResult.trackingNumber,
+            tracking_url: "",
+            label_url: shipmentResult.labelUrl
+          }
+        ]
       }
       
       this.logger_.info("📤 Retour du service Mondial Relay")
@@ -983,87 +934,15 @@ class MondialRelayFulfillmentService extends AbstractFulfillmentProviderService 
       })
     
     this.logger_.info("✅ Expédition traitée via API 2 RÉELLE")
-    this.logger_.info(`📦 Résultat: ${JSON.stringify(result, null, 2)}`)
+    this.logger_.info(`📦 Résultat: ${redactSensitive(JSON.stringify(result, null, 2))}`)
     
-    return {
-      shipmentId: result.shipmentId,
-      trackingNumber: result.trackingNumber,
-      labelUrl: result.labelUrl,
-      status: result.status,
-      relayPointInfo: result.relayPointInfo
-    }
+    return result
   }
 
-  /**
-   * Construire le XML pour l'API 2 Mondial Relay
-   */
-  private buildShipmentXML(data: any): string {
-    return `<?xml version="1.0" encoding="utf-8"?>
-<ShipmentCreationRequest xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns="http://www.example.org/Request">
-  <Context>
-    <Login>${this.options_.apiKey}</Login>
-    <Password>${this.options_.apiSecret}</Password>
-    <CustomerId>${this.options_.customerId}</CustomerId>
-    <Culture>fr-FR</Culture>
-    <VersionAPI>1.0</VersionAPI>
-  </Context>
-  <OutputOptions>
-    <OutputFormat>10x15</OutputFormat>
-    <OutputType>PdfUrl</OutputType>
-  </OutputOptions>
-  <ShipmentsList>
-    <Shipment>
-      <OrderNo>${data.orderNumber}</OrderNo>
-      <CustomerNo>${data.customerNumber}</CustomerNo>
-      <ParcelCount>1</ParcelCount>
-      <DeliveryMode Mode="${data.deliveryMode}" Location="${data.location}" />
-      <CollectionMode Mode="CCC" Location="" />
-      <Parcels>
-        <Parcel>
-          <Content>${data.content}</Content>
-          <Weight Value="${data.weight}" Unit="gr" />
-        </Parcel>
-      </Parcels>
-      <DeliveryInstruction>${data.deliveryInstruction}</DeliveryInstruction>
-      <Sender>
-        <Address>
-          <Title>${data.sender.title}</Title>
-          <Firstname>${data.sender.firstname}</Firstname>
-          <Lastname>${data.sender.lastname}</Lastname>
-          <Streetname>${data.sender.streetname}</Streetname>
-          <HouseNo>${data.sender.houseNo}</HouseNo>
-          <CountryCode>${data.sender.countryCode}</CountryCode>
-          <PostCode>${data.sender.postCode}</PostCode>
-          <City>${data.sender.city}</City>
-          <AddressAdd1>Mondial Relay</AddressAdd1>
-          <AddressAdd2 />
-          <AddressAdd3>Mondial Relay</AddressAdd3>
-          <PhoneNo>${data.sender.phoneNo}</PhoneNo>
-          <MobileNo>${data.sender.mobileNo}</MobileNo>
-          <Email>${data.sender.email}</Email>
-        </Address>
-      </Sender>
-      <Recipient>
-        <Address>
-          <Title>${data.recipient.title}</Title>
-          <Firstname>${data.recipient.firstname}</Firstname>
-          <Lastname>${data.recipient.lastname}</Lastname>
-          <Streetname>${data.recipient.streetname}</Streetname>
-          <HouseNo>${data.recipient.houseNo}</HouseNo>
-          <CountryCode>${data.recipient.countryCode}</CountryCode>
-          <PostCode>${data.recipient.postCode}</PostCode>
-          <City>${data.recipient.city}</City>
-          <AddressAdd1 />
-          <AddressAdd2 />
-          <AddressAdd3 />
-          <PhoneNo>${data.recipient.phoneNo}</PhoneNo>
-          <MobileNo />
-          <Email>${data.recipient.email}</Email>
-        </Address>
-      </Recipient>
-    </Shipment>
-  </ShipmentsList>
-</ShipmentCreationRequest>`
+  /** L'API 2 attend « PP-NNNNNN » (ex. FR-020255) ; un identifiant nu prend le pays du destinataire. */
+  private formatRelayPointLocation(relayPointId: string, countryCode: string): string {
+    const match = relayPointId.trim().toUpperCase().match(/^(?:([A-Z]{2})-?)?(\d+)$/)
+    return match ? `${match[1] || countryCode}-${match[2]}` : relayPointId.trim()
   }
 }
 
