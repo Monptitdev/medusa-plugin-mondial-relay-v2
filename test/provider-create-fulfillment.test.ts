@@ -120,3 +120,12 @@ test("HOM: l'e-mail de la commande est transmis au destinataire (requis en livra
   const recipient = fake.requests[0].body.split("<Recipient>")[1]
   assert.match(recipient, /<Email>client@example.com<\/Email>/)
 })
+
+test("e-mail destinataire: repli sur order.customer.email quand order.email est absent (workflow Medusa)", async () => {
+  const fake = stubApi2("sandbox-24r.xml")
+  const { provider } = buildProvider({ carrier: "mondial-relay", deliveryMode: "24R", relayPointId: "020255" })
+  const { email, ...orderWithoutEmail } = order
+  await provider.createFulfillment({}, items, { ...orderWithoutEmail, customer: { email: "client.compte@example.com" } })
+  const recipient = fake.requests[0].body.split("<Recipient>")[1]
+  assert.match(recipient, /<Email>client.compte@example.com<\/Email>/)
+})

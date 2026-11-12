@@ -13,7 +13,7 @@ import {
 } from "@medusajs/framework/types"
 
 // Importer le service API 2
-import { MondialRelayAPI2Service, requiresRelayPoint } from "../../services/mondial-relay-api2.service"
+import { MondialRelayAPI2Service, formatRelayPointLocation, requiresRelayPoint } from "../../services/mondial-relay-api2.service"
 // Importer le service de tarifs
 import TarifsService from "../../services/tarifs.service"
 import {
@@ -461,7 +461,7 @@ class MondialRelayFulfillmentService extends AbstractFulfillmentProviderService 
         if (!relayPointId) {
           throw new Error(`Point relais manquant dans les métadonnées de la commande (mode ${deliveryMode})`)
         }
-        location = this.formatRelayPointLocation(String(relayPointId), recipientCountry)
+        location = formatRelayPointLocation(String(relayPointId), recipientCountry)
       }
 
       const shipmentData = {
@@ -487,7 +487,7 @@ class MondialRelayFulfillmentService extends AbstractFulfillmentProviderService 
           postCode: deliveryAddress.postal_code || "",
           city: deliveryAddress.city || "",
           phoneNo: deliveryAddress.phone || "",
-          email: (order as { email?: string }).email || deliveryAddress.email || ""
+          email: (order as { email?: string }).email || (order as { customer?: { email?: string } }).customer?.email || deliveryAddress.email || ""
         },
         sender: {
           title: this.options_.business?.title || process.env.BUSINESS_TITLE,
@@ -937,12 +937,6 @@ class MondialRelayFulfillmentService extends AbstractFulfillmentProviderService 
     this.logger_.info(`📦 Résultat: ${redactSensitive(JSON.stringify(result, null, 2))}`)
     
     return result
-  }
-
-  /** L'API 2 attend « PP-NNNNNN » (ex. FR-020255) ; un identifiant nu prend le pays du destinataire. */
-  private formatRelayPointLocation(relayPointId: string, countryCode: string): string {
-    const match = relayPointId.trim().toUpperCase().match(/^(?:([A-Z]{2})-?)?(\d+)$/)
-    return match ? `${match[1] || countryCode}-${match[2]}` : relayPointId.trim()
   }
 }
 
