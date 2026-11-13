@@ -1,7 +1,7 @@
 import { AuthenticatedMedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { redactSensitive } from "../../../../utils/redact-sensitive"
 import { ContainerRegistrationKeys, Modules } from "@medusajs/framework/utils"
-import { MondialRelayAPI2Service } from "../../../../services/mondial-relay-api2.service"
+import { MondialRelayAPI2Service, formatRelayPointLocation } from "../../../../services/mondial-relay-api2.service"
 
 export async function GET(req: AuthenticatedMedusaRequest, res: MedusaResponse) {
   try {
@@ -138,7 +138,7 @@ export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse)
       orderNumber: orderId || `ORDER_${Date.now()}`,
       customerNumber: `CUSTOMER_${Date.now()}`,
       deliveryMode: deliveryMode || "24R",
-      location: relayPointId || "FR-071039",
+      location: formatRelayPointLocation(String(relayPointId || "FR-071039"), recipient?.countryCode || "FR"),
       weight: weight || 500, // Poids par défaut plus réaliste pour les jouets
       content: "Jouets et articles pour enfants",
       deliveryInstruction: "",

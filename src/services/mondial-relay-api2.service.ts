@@ -71,6 +71,12 @@ export function requiresRelayPoint(deliveryMode: string): boolean {
   return !HOME_DELIVERY_MODES.has(deliveryMode.toUpperCase())
 }
 
+/** L'API 2 attend « PP-NNNNNN » (ex. FR-020255) ; un identifiant nu prend le pays donné. */
+export function formatRelayPointLocation(relayPointId: string, countryCode: string): string {
+  const match = relayPointId.trim().toUpperCase().match(/^(?:([A-Z]{2})-?)?(\d+)$/)
+  return match ? `${match[1] || countryCode.toUpperCase()}-${match[2]}` : relayPointId.trim()
+}
+
 /** Format XSD Mondial Relay : \+\d{3,20}. Renvoie "" si le numéro est inexploitable. */
 export function normalizePhone(raw: string | undefined, countryCode: string | undefined): string {
   const compact = (raw ?? "").replace(/[\s.\-()\/]/g, "")
